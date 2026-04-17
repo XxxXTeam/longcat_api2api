@@ -1,0 +1,5 @@
+key.txt
+*.exe
+data
+*_test.go
+config.json
