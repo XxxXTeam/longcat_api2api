@@ -23,6 +23,7 @@ const (
 	defaultOpenAIBase    = "https://api.longcat.chat/openai"
 	defaultAnthropicBase = "https://api.longcat.chat/anthropic"
 	defaultCooldown      = 90 * time.Second
+	clientAuthCookieName = "longcat_dashboard_api_key"
 )
 
 var supportedModels = []string{
@@ -207,8 +208,10 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/", authMiddleware(cfg, http.HandlerFunc(dashboardHandler)))
-	mux.Handle("/dashboard", authMiddleware(cfg, http.HandlerFunc(dashboardHandler)))
+	mux.HandleFunc("/", dashboardHandler)
+	mux.HandleFunc("/dashboard", dashboardHandler)
+	mux.HandleFunc("/api/auth/login", loginHandler(cfg))
+	mux.HandleFunc("/api/auth/logout", logoutHandler())
 	mux.Handle("/api/stats", authMiddleware(cfg, statsHandler(stats)))
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.Handle("/v1/models", authMiddleware(cfg, http.HandlerFunc(modelsHandler)))
@@ -914,16 +917,7 @@ func healthzHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func authMiddleware(cfg Config, next http.Handler) http.Handler {
-	if len(cfg.APIKeys) == 0 {
-		return next
-	}
-
-	allowed := make(map[string]struct{}, len(cfg.APIKeys))
-	for _, key := range cfg.APIKeys {
-		if trimmed := strings.TrimSpace(key); trimmed != "" {
-			allowed[trimmed] = struct{}{}
-		}
-	}
+	allowed := allowedAPIKeys(cfg)
 	if len(allowed) == 0 {
 		return next
 	}
@@ -939,6 +933,11 @@ func authMiddleware(cfg Config, next http.Handler) http.Handler {
 }
 
 func extractClientAPIKey(r *http.Request) string {
+	if cookie, err := r.Cookie(clientAuthCookieName); err == nil {
+		if v := strings.TrimSpace(cookie.Value); v != "" {
+			return v
+		}
+	}
 	if v := strings.TrimSpace(r.Header.Get("X-API-Key")); v != "" {
 		return v
 	}
@@ -947,6 +946,81 @@ func extractClientAPIKey(r *http.Request) string {
 		return strings.TrimSpace(auth[7:])
 	}
 	return ""
+}
+
+func allowedAPIKeys(cfg Config) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(cfg.APIKeys))
+	for _, key := range cfg.APIKeys {
+		if trimmed := strings.TrimSpace(key); trimmed != "" {
+			allowed[trimmed] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func loginHandler(cfg Config) http.HandlerFunc {
+	allowed := allowedAPIKeys(cfg)
+
+	type loginRequest struct {
+		APIKey string `json:"api_key"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeOpenAIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
+			return
+		}
+		if len(allowed) == 0 {
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "api key auth is not enabled")
+			return
+		}
+
+		var req loginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "request body is not valid JSON")
+			return
+		}
+		key := strings.TrimSpace(req.APIKey)
+		if _, ok := allowed[key]; !ok {
+			writeOpenAIError(w, http.StatusUnauthorized, "authentication_error", "invalid or missing api key")
+			return
+		}
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     clientAuthCookieName,
+			Value:    key,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   86400 * 30,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+		})
+	}
+}
+
+func logoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeOpenAIError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
+			return
+		}
+
+		http.SetCookie(w, &http.Cookie{
+			Name:     clientAuthCookieName,
+			Value:    "",
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   -1,
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": true,
+		})
+	}
 }
 
 func modelsHandler(w http.ResponseWriter, _ *http.Request) {

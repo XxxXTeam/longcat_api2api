@@ -204,6 +204,92 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       text-align: right;
       font-size: 12px;
     }
+    .auth-mask {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2, 10, 24, 0.72);
+      backdrop-filter: blur(16px);
+      z-index: 20;
+    }
+    .auth-mask.show {
+      display: flex;
+    }
+    .auth-card {
+      width: min(460px, 100%);
+      padding: 24px;
+      border-radius: 24px;
+      background: rgba(10, 21, 40, 0.9);
+      border: 1px solid rgba(87, 227, 255, 0.25);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+    }
+    .auth-card h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      letter-spacing: 0.05em;
+    }
+    .auth-card p {
+      margin: 0 0 18px;
+      color: var(--sub);
+      line-height: 1.6;
+      font-size: 14px;
+    }
+    .auth-field {
+      width: 100%;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      outline: none;
+      font-size: 14px;
+    }
+    .auth-field:focus {
+      border-color: rgba(87, 227, 255, 0.65);
+      box-shadow: 0 0 0 4px rgba(87, 227, 255, 0.12);
+    }
+    .auth-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .auth-btn {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text);
+      background: linear-gradient(90deg, rgba(87,227,255,0.9), rgba(122,168,255,0.95));
+      box-shadow: 0 12px 26px rgba(87, 227, 255, 0.22);
+    }
+    .auth-btn.secondary {
+      background: rgba(255,255,255,0.08);
+      box-shadow: none;
+    }
+    .auth-error {
+      min-height: 22px;
+      margin-top: 12px;
+      color: var(--red);
+      font-size: 13px;
+    }
+    .meta .auth-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--sub);
+    }
+    .meta .auth-state button {
+      border: 0;
+      border-radius: 999px;
+      padding: 6px 10px;
+      cursor: pointer;
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+    }
     @media (max-width: 1100px) {
       .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .grid { grid-template-columns: 1fr; }
@@ -226,6 +312,7 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       <div class="meta">
         <div>上游格式: <strong id="upstream">-</strong></div>
         <div>最后刷新: <strong id="updatedAt">-</strong></div>
+        <div class="auth-state">前端认证: <strong id="authState">未连接</strong> <button id="logoutBtn" type="button">清除 Key</button></div>
       </div>
     </section>
 
@@ -305,8 +392,67 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     <div class="footer">Powered by LongCat API2API Dashboard</div>
   </div>
 
+  <div class="auth-mask" id="authMask">
+    <div class="auth-card">
+      <h2>Dashboard Access</h2>
+      <p>页面本身可以打开，但统计数据需要前端携带 API Key。输入后会仅保存在当前浏览器的本地存储中。</p>
+      <input class="auth-field" id="apiKeyInput" type="password" placeholder="输入 Bearer API Key 或 X-API-Key 对应值">
+      <div class="auth-actions">
+        <button class="auth-btn" id="saveKeyBtn" type="button">连接大屏</button>
+        <button class="auth-btn secondary" id="cancelKeyBtn" type="button">暂不连接</button>
+      </div>
+      <div class="auth-error" id="authError"></div>
+    </div>
+  </div>
+
   <script>
     const nf = new Intl.NumberFormat("zh-CN");
+    const storageKey = "longcat-dashboard-api-key";
+    const authMask = document.getElementById("authMask");
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const authError = document.getElementById("authError");
+    const authState = document.getElementById("authState");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const saveKeyBtn = document.getElementById("saveKeyBtn");
+    const cancelKeyBtn = document.getElementById("cancelKeyBtn");
+
+    function getSavedApiKey() {
+      return localStorage.getItem(storageKey) || "";
+    }
+
+    function setSavedApiKey(value) {
+      if (value) {
+        localStorage.setItem(storageKey, value);
+      } else {
+        localStorage.removeItem(storageKey);
+      }
+      updateAuthState();
+    }
+
+    function updateAuthState() {
+      authState.textContent = getSavedApiKey() ? "已认证" : "未连接";
+    }
+
+    function showAuth(message) {
+      if (message) {
+        authError.textContent = message;
+      }
+      const shouldPrefill = !authMask.classList.contains("show") || !apiKeyInput.value.trim();
+      if (shouldPrefill) {
+        apiKeyInput.value = getSavedApiKey();
+      }
+      authMask.classList.add("show");
+      updateAuthState();
+      if (document.activeElement !== apiKeyInput) {
+        setTimeout(function() { apiKeyInput.focus(); }, 0);
+      }
+    }
+
+    function hideAuth() {
+      authError.textContent = "";
+      authMask.classList.remove("show");
+      updateAuthState();
+    }
 
     function renderBars(el, rows, emptyText) {
       if (!rows || !rows.length) {
@@ -363,8 +509,16 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
     }
 
     async function refresh() {
-      const resp = await fetch("/api/stats", { cache: "no-store" });
+      const resp = await fetch("/api/stats", { cache: "no-store", credentials: "same-origin" });
+      if (resp.status === 401) {
+        showAuth("请输入有效的 API Key 后再加载统计数据");
+        return;
+      }
+      if (!resp.ok) {
+        throw new Error("load stats failed: " + resp.status);
+      }
       const data = await resp.json();
+      hideAuth();
 
       document.getElementById("upstream").textContent = data.upstream_format || "-";
       document.getElementById("updatedAt").textContent = formatTime(data.timestamp);
@@ -389,7 +543,59 @@ var dashboardTemplate = template.Must(template.New("dashboard").Parse(`<!DOCTYPE
       renderLogs(document.getElementById("logs"), data.recent_logs);
     }
 
-    refresh().catch(console.error);
+    saveKeyBtn.addEventListener("click", function() {
+      const value = apiKeyInput.value.trim();
+      if (!value) {
+        authError.textContent = "API Key 不能为空";
+        return;
+      }
+      fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ api_key: value })
+      })
+        .then(function(resp) {
+          if (!resp.ok) {
+            throw new Error(resp.status === 401 ? "API Key 不正确" : "登录失败: " + resp.status);
+          }
+          setSavedApiKey(value);
+          return refresh();
+        })
+        .catch(function(err) {
+          authError.textContent = err && err.message ? err.message : "认证失败";
+        });
+    });
+
+    cancelKeyBtn.addEventListener("click", function() {
+      hideAuth();
+    });
+
+    logoutBtn.addEventListener("click", function() {
+      fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin"
+      }).finally(function() {
+        setSavedApiKey("");
+        showAuth("已清除本地登录状态");
+      });
+    });
+
+    apiKeyInput.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        saveKeyBtn.click();
+      }
+    });
+
+    updateAuthState();
+    refresh().catch(function(err) {
+      console.error(err);
+      if (!getSavedApiKey()) {
+        showAuth("输入 API Key 后即可加载大屏数据");
+      }
+    });
     setInterval(() => refresh().catch(console.error), 3000);
   </script>
 </body>

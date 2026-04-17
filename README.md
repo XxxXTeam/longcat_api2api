@@ -79,7 +79,8 @@ $env:CONFIG_FILE = "custom-config.json"
 行为说明：
 
 - `api_keys` 为空时，不启用客户端鉴权
-- `api_keys` 有值时，`/`、`/dashboard`、`/api/stats`、`/v1/models`、`/v1/chat/completions` 都需要鉴权
+- `api_keys` 有值时，`/api/stats`、`/v1/models`、`/v1/chat/completions` 需要鉴权
+- `/` 和 `/dashboard` 允许直接打开，前端会弹出认证层，调用 `/api/auth/login` 校验 API Key 并写入登录 Cookie，再用该会话请求受保护的数据接口
 - `GET /healthz` 保持不鉴权，方便健康检查
 
 ## 环境变量
