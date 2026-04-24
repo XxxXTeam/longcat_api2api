@@ -150,6 +150,18 @@ data/stats.json
 - HTTP 状态码统计
 - 最近日志
 
+## 支持模型
+
+| 模型名称 | API 格式 | 描述 |
+|---|---|---|
+| LongCat-Flash-Chat | OpenAI/Anthropic | 高性能通用对话模型 |
+| LongCat-Flash-Thinking | OpenAI/Anthropic | 深度思考模型 |
+| LongCat-Flash-Thinking-2601 | OpenAI/Anthropic | 升级版深度思考模型 |
+| LongCat-Flash-Lite | OpenAI/Anthropic | 高效轻量化 MoE 模型 |
+| LongCat-Flash-Omni-2603 | OpenAI | 多模态模型 |
+| LongCat-Flash-Chat-2602-Exp | OpenAI | 高性能通用对话模型 |
+| LongCat-2.0-Preview | OpenAI/Anthropic | 高性能 Agentic 模型 |
+
 ## 调用示例
 
 ```bash

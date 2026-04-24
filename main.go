@@ -33,6 +33,7 @@ var supportedModels = []string{
 	"LongCat-Flash-Lite",
 	"LongCat-Flash-Omni-2603",
 	"LongCat-Flash-Chat-2602-Exp",
+	"LongCat-2.0-Preview",
 }
 
 var appLogger = NewColorLogger(nil)
